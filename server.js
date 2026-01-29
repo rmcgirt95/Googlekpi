@@ -3,6 +3,7 @@ require("dotenv").config();
 console.log("CLIENT_SECRET length:", (process.env.GOOGLE_CLIENT_SECRET || "").length);
 console.log("PORT:", process.env.PORT);
 
+const path = require("path");
 const express = require("express");
 const session = require("express-session");
 const passport = require("passport");
@@ -12,27 +13,42 @@ const app = express();
 
 app.use(express.json());
 
+// IMPORTANT: ngrok / proxy support
+app.set("trust proxy", 1);
+
+// ---- Sessions ----
 app.use(session({
+  name: "sid",
   secret: process.env.SESSION_SECRET || "dev-secret",
   resave: false,
   saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: true, // ngrok is https
+    maxAge: 1000 * 60 * 60 * 8
+  }
 }));
 
+// ---- Passport ----
 app.use(passport.initialize());
 app.use(passport.session());
 
 passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((obj, done) => done(null, obj));
 
+const PORT = Number(process.env.PORT || 5050);
+const BASE_URL = process.env.BASE_URL || `http://127.0.0.1:${PORT}`;
+
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: "/auth/google/callback",
+  callbackURL: process.env.OAUTH_CALLBACK_URL,
 }, (accessToken, refreshToken, profile, done) => {
-  // store tokens in session user object
   return done(null, { profile, accessToken, refreshToken });
 }));
 
+// ---- Auth routes ----
 app.get("/auth/google",
   passport.authenticate("google", {
     scope: [
@@ -52,14 +68,20 @@ app.get("/auth/google/callback",
 );
 
 app.get("/logout", (req, res) => {
-  req.logout(() => {
-    res.redirect("/");
-  });
+  req.logout(() => res.redirect("/"));
 });
 
 app.get("/favicon.ico", (req, res) => res.status(204).end());
 
-// --- Helpers ---
+// ---- Serve frontend (Googlekpi folder) ----
+// If server.js is in the same folder as index.html, dashboard.js, style.css:
+app.use(express.static(__dirname));
+
+app.get("/", (req, res) => {
+  return res.sendFile(path.join(__dirname, "index.html"));
+});
+
+// ---- Helpers ----
 function requireLogin(req, res, next) {
   if (!req.user || !req.user.accessToken) {
     return res.status(401).json({ error: "Not logged in. Visit /auth/google first." });
@@ -128,7 +150,12 @@ function pctChange(cur, prev) {
   return ((cur - prev) / prev) * 100;
 }
 
-// --- Metadata endpoint ---
+function gaRoundPct(n) {
+  if (!isFinite(n)) return null;
+  return Math.round(n * 10) / 10;
+}
+
+// ---- Metadata endpoint ----
 app.get("/api/ga4/metadata", requireLogin, async (req, res) => {
   try {
     const propertyId = String(process.env.GA4_PROPERTY_ID || "").match(/(\d+)/)?.[1] || "";
@@ -148,12 +175,8 @@ app.get("/api/ga4/metadata", requireLogin, async (req, res) => {
     return res.status(500).json({ error: e.message });
   }
 });
-function gaRoundPct(n) {
-  if (!isFinite(n)) return null;
-  return Math.round(n * 10) / 10;
-}
 
-// --- Main GA endpoint ---
+// ---- Main GA endpoint ----
 app.get("/api/ga4", requireLogin, async (req, res) => {
   try {
     const source = String(req.query.source || "all");
@@ -169,9 +192,8 @@ app.get("/api/ga4", requireLogin, async (req, res) => {
     console.log("GA4 propertyPath:", propertyPath);
 
     // GA Home style: last 7 days vs previous 7 days
-    const curRange  = { startDate: "7daysAgo",  endDate: "yesterday" };
-const prevRange = { startDate: "14daysAgo", endDate: "8daysAgo" };
-
+    const curRange = { startDate: "7daysAgo", endDate: "yesterday" };
+    const prevRange = { startDate: "14daysAgo", endDate: "8daysAgo" };
 
     // 1) Timeseries: Active users by date (current)
     const curReport = await gaRunReport(propertyPath, req.user.accessToken, {
@@ -210,7 +232,7 @@ const prevRange = { startDate: "14daysAgo", endDate: "8daysAgo" };
 
     const totals = { activeUsers, newUsers, avgEngagementTimeSec };
 
-    // 4) Sessions by channel (GA Home card) - current + previous, with % change
+    // 4) Sessions by channel - current + previous with % change
     const channelCur = await gaRunReport(propertyPath, req.user.accessToken, {
       dateRanges: [curRange],
       dimensions: [{ name: "sessionDefaultChannelGroup" }],
@@ -235,30 +257,49 @@ const prevRange = { startDate: "14daysAgo", endDate: "8daysAgo" };
       const prevSessions = Number(prevMap.get(channel) || 0);
       const changePct = pctChange(sessions, prevSessions);
 
-   return {
-  channel,
-  sessions,
-  prevSessions,
-  changePct: gaRoundPct(changePct)
-};
-
-
+      return {
+        channel,
+        sessions,
+        prevSessions,
+        changePct: gaRoundPct(changePct)
+      };
     });
 
-    // 5) Top pages (pagePathPlusQueryString) - keep it REST like everything else
-    const pagesReport = await gaRunReport(propertyPath, req.user.accessToken, {
+    // 5) Top pages (Page title) - current + previous with % change
+    const pagesCur = await gaRunReport(propertyPath, req.user.accessToken, {
       dateRanges: [curRange],
-      dimensions: [{ name: "pagePathPlusQueryString" }],
-      metrics: [{ name: "screenPageViews" }, { name: "userEngagementDuration" }],
+      dimensions: [{ name: "pageTitle" }],
+      metrics: [{ name: "screenPageViews" }],
       orderBys: [{ metric: { metricName: "screenPageViews" }, desc: true }],
       limit: 5
     });
 
-    const pages = (pagesReport.rows || []).map(r => ({
-      page: r.dimensionValues?.[0]?.value || "",
-      views: Number(r.metricValues?.[0]?.value || 0),
-      engagementSec: Math.round(Number(r.metricValues?.[1]?.value || 0))
-    }));
+    const pagesPrev = await gaRunReport(propertyPath, req.user.accessToken, {
+      dateRanges: [prevRange],
+      dimensions: [{ name: "pageTitle" }],
+      metrics: [{ name: "screenPageViews" }],
+      orderBys: [{ metric: { metricName: "screenPageViews" }, desc: true }],
+      limit: 50
+    });
+
+    const prevPagesMap = mapRowsToKeyedMetric(pagesPrev.rows || [], 0, 0);
+
+    const topPages = (pagesCur.rows || []).map(r => {
+      const title = r.dimensionValues?.[0]?.value || "(not set)";
+      const views = Number(r.metricValues?.[0]?.value || 0);
+
+      const prevViews = Number(prevPagesMap.get(title) || 0);
+      const changePct = pctChange(views, prevViews);
+
+      return {
+        title,
+        views,
+        prevViews,
+        changePct: gaRoundPct(changePct)
+      };
+    });
+
+    const topPagesMeta = { rangeLabel: "Last 7 days" };
 
     return res.json({
       query: { source },
@@ -266,7 +307,8 @@ const prevRange = { startDate: "14daysAgo", endDate: "8daysAgo" };
       series,
       prevSeries,
       channelSessions,
-      pages
+      topPages,
+      topPagesMeta
     });
 
   } catch (err) {
@@ -274,17 +316,16 @@ const prevRange = { startDate: "14daysAgo", endDate: "8daysAgo" };
       message: err?.message,
       stack: err?.stack
     });
-return res.status(500).json({
-  error: err?.message || "GA4 request failed",
-  stack: err?.stack || null
-});
+
+    return res.status(500).json({
+      error: err?.message || "GA4 request failed",
+      stack: err?.stack || null
+    });
   }
 });
 
-// Serve your frontend files
-app.use(express.static("."));
-
-const port = Number(process.env.PORT || 5050);
-app.listen(port, () => {
-  console.log(`✅ Server running at http://127.0.0.1:${port}`);
+// ---- Start server (ONLY ONCE) ----
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Server running on port ${PORT}`);
+  console.log("BASE_URL:", BASE_URL);
 });

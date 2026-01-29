@@ -4,16 +4,25 @@
   <meta charset="UTF-8" />
   <title>Google Analytics Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="style.css" />
-  <link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+  <!-- ✅ Local CSS (same folder) -->
+  <link rel="stylesheet" href="/style.css" />
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
+<div id="lock">
+  <h2>🔒 Protected</h2>
+  <input type="password" id="password" placeholder="Enter password" />
+  <button onclick="unlock()">Unlock</button>
+  <div id="error" class="error"></div>
+</div>
+<div id="app">
 
 <div class="container">
 
@@ -44,62 +53,50 @@
   <div class="card">
     <canvas id="usersChart" height="120"></canvas>
   </div>
-<div class="card ga-card">
-  <div class="ga-card-top">
-    <div class="ga-card-title">
-      <div class="ga-title-line">Sessions <span class="ga-caret">▼</span> by</div>
-      <div class="ga-title-line">Session primary channel group <span class="ga-caret">▼</span></div>
+
+  <div class="card ga-card">
+    <div class="ga-card-top">
+      <div class="ga-card-title">
+        <div class="ga-title-line">Sessions <span class="ga-caret">▼</span> by</div>
+        <div class="ga-title-line">Session primary channel group <span class="ga-caret">▼</span></div>
+      </div>
     </div>
+
+    <div class="ga-colheads">
+      <div class="ga-col-left">SESSION PRIMARY …</div>
+      <div class="ga-col-right">SESSIONS</div>
+    </div>
+
+    <div id="sessionsByChannel"></div>
   </div>
 
-  <div class="ga-colheads">
-    <div class="ga-col-left">SESSION PRIMARY …</div>
-    <div class="ga-col-right">SESSIONS</div>
+  <div class="ga-card">
+    <div class="ga-card-header">
+      <h3>Views by<br><span>Page title and screen class</span></h3>
+      <button class="check-btn">✓</button>
+    </div>
+
+   <div class="ga-table">
+  <div class="ga-row ga-header">
+    <span>PAGE TITLE</span>
+    <span>VIEWS</span>
   </div>
 
-  <div id="sessionsByChannel"></div>
+  <!-- ✅ JS will inject rows here -->
+  <div id="topPagesBody"></div>
 </div>
 
-<div class="ga-card">
-  <div class="ga-card-header">
-    <h3>Views by<br><span>Page title and screen class</span></h3>
-    <button class="check-btn">✓</button>
-  </div>
+<div class="ga-footer">
+  <span id="topPagesRangeLabel">Last 7 days</span>
+  <a href="#">View pages →</a>
+</div>
 
-  <div class="ga-table">
-    <div class="ga-row ga-header">
-      <span>PAGE TITLE</span>
-      <span>VIEWS</span>
-    </div>
-
-    <div class="ga-row">
-      <span>Synoligo: Custom Oligos</span>
-      <span>99 <small class="up">▲ 52.3%</small></span>
-      <div class="bar"><div style="width:52%"></div></div>
-    </div>
-
-    <div class="ga-row">
-      <span>Oligo Mod List</span>
-      <span>47 <small class="up">▲ 46.9%</small></span>
-      <div class="bar"><div style="width:47%"></div></div>
-    </div>
-
-    <div class="ga-row">
-      <span>Build Your Career</span>
-      <span>17 <small class="down">▼ 58.5%</small></span>
-      <div class="bar"><div style="width:17%"></div></div>
-    </div>
-  </div>
-
-  <div class="ga-footer">
-    <span>Last 7 days</span>
-    <a href="#">View pages →</a>
   </div>
 </div>
 
-
 </div>
 
-<script src="dashboard.js"></script>
+<!-- ✅ Your real frontend logic -->
+<script src="/dashboard.js"></script>
 </body>
 </html>

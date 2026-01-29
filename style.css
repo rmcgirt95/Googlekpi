@@ -165,3 +165,27 @@ body {
   min-width: 120px;
   text-align:right;
 }
+body {
+      font-family: Arial, sans-serif;
+    }
+    #app {
+      display: none;
+    }
+    #lock {
+      max-width: 300px;
+      margin: 100px auto;
+      text-align: center;
+    }
+    input {
+      padding: 8px;
+      width: 100%;
+    }
+    button {
+      padding: 8px;
+      margin-top: 10px;
+      width: 100%;
+    }
+    .error {
+      color: red;
+      margin-top: 8px;
+    }
